@@ -141,7 +141,10 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
       OnPlatformViewCreatedCallback onPlatformViewCreated,
       Set<Factory<OneSequenceGestureRecognizer>>? gestureRecognizers) {
     if (defaultTargetPlatform == TargetPlatform.android) {
-      if (useHybridComposition) {
+      final useHybridCompositionParam =
+          (creationParams['useHybridCompositionOverride'] ??
+              useHybridComposition) as bool;
+      if (useHybridCompositionParam) {
         return PlatformViewLink(
           viewType: 'plugins.flutter.io/mapbox_gl',
           surfaceFactory: (
@@ -156,8 +159,8 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
             );
           },
           onCreatePlatformView: (PlatformViewCreationParams params) {
-            final SurfaceAndroidViewController controller =
-                PlatformViewsService.initSurfaceAndroidView(
+            late AndroidViewController controller;
+            controller = PlatformViewsService.initAndroidView(
               id: params.id,
               viewType: 'plugins.flutter.io/mapbox_gl',
               layoutDirection: TextDirection.ltr,
@@ -299,8 +302,13 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
         <String, Object?>{
           'left': rect.left,
           'top': rect.top,
+          //specific arguments needed for android rect function
           'right': rect.right,
           'bottom': rect.bottom,
+          //specific arguments needed for iOS rect function
+          'width': rect.width,
+          'height': rect.height,
+          //arguments for mapbox
           'layerIds': layerIds,
           'filter': filter,
         },
@@ -380,6 +388,22 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
         'bytes': bytes,
         'length': bytes.length,
         'coordinates': coordinates.toList()
+      });
+    } on PlatformException catch (e) {
+      return new Future.error(e);
+    }
+  }
+
+  @override
+  Future<void> updateImageSource(
+      String imageSourceId, Uint8List? bytes, LatLngQuad? coordinates) async {
+    try {
+      return await _channel
+          .invokeMethod('style#updateImageSource', <String, Object?>{
+        'imageSourceId': imageSourceId,
+        'bytes': bytes,
+        'length': bytes?.length,
+        'coordinates': coordinates?.toList()
       });
     } on PlatformException catch (e) {
       return new Future.error(e);
@@ -480,6 +504,16 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
     try {
       return await _channel.invokeMethod('style#setFilter',
           <String, Object>{'layerId': layerId, 'filter': jsonEncode(filter)});
+    } on PlatformException catch (e) {
+      return new Future.error(e);
+    }
+  }
+
+  @override
+  Future<void> setVisibility(String layerId, bool isVisible) async {
+    try {
+      return await _channel.invokeMethod('style#setVisibility',
+          <String, Object>{'layerId': layerId, 'isVisible': isVisible});
     } on PlatformException catch (e) {
       return new Future.error(e);
     }
@@ -623,6 +657,29 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
   }
 
   @override
+  Future<void> addFillExtrusionLayer(
+      String sourceId, String layerId, Map<String, dynamic> properties,
+      {String? belowLayerId,
+      String? sourceLayer,
+      double? minzoom,
+      double? maxzoom,
+      dynamic filter,
+      required bool enableInteraction}) async {
+    await _channel.invokeMethod('fillExtrusionLayer#add', <String, dynamic>{
+      'sourceId': sourceId,
+      'layerId': layerId,
+      'belowLayerId': belowLayerId,
+      'sourceLayer': sourceLayer,
+      'minzoom': minzoom,
+      'maxzoom': maxzoom,
+      'filter': jsonEncode(filter),
+      'enableInteraction': enableInteraction,
+      'properties': properties
+          .map((key, value) => MapEntry<String, String>(key, jsonEncode(value)))
+    });
+  }
+
+  @override
   void dispose() {
     super.dispose();
     _channel.setMethodCallHandler(null);
@@ -672,6 +729,24 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
     });
   }
 
+  @override
+  Future<void> addHeatmapLayer(
+      String sourceId, String layerId, Map<String, dynamic> properties,
+      {String? belowLayerId,
+      String? sourceLayer,
+      double? minzoom,
+      double? maxzoom}) async {
+    await _channel.invokeMethod('heatmapLayer#add', <String, dynamic>{
+      'sourceId': sourceId,
+      'layerId': layerId,
+      'belowLayerId': belowLayerId,
+      'minzoom': minzoom,
+      'maxzoom': maxzoom,
+      'properties': properties
+          .map((key, value) => MapEntry<String, String>(key, jsonEncode(value)))
+    });
+  }
+
   Future<void> setFeatureForGeoJsonSource(
       String sourceId, Map<String, dynamic> geojsonFeature) async {
     await _channel.invokeMethod('source#setFeature', <String, dynamic>{
@@ -685,4 +760,16 @@ class MethodChannelMapboxGl extends MapboxGlPlatform {
 
   @override
   void resizeWebMap() {}
+
+  @override
+  Future<String> takeSnapshot(SnapshotOptions snapshotOptions) async {
+    try {
+      debugPrint("${snapshotOptions.toJson()}");
+      var uri = await _channel.invokeMethod(
+          'snapshot#takeSnapshot', snapshotOptions.toJson());
+      return uri;
+    } on PlatformException catch (e) {
+      return new Future.error(e);
+    }
+  }
 }

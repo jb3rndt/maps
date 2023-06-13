@@ -75,6 +75,7 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
           zoom: camera['zoom'],
           bearing: camera['bearing'],
           pitch: camera['tilt'],
+          preserveDrawingBuffer: true,
         ),
       );
       _map.on('load', _onStyleLoaded);
@@ -640,7 +641,13 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
     }
     _interactiveFeatureLayerIds.clear();
 
-    _map.setStyle(styleString);
+    try {
+      final styleJson = jsonDecode(styleString ?? '');
+      final styleJsObject = jsUtil.jsify(styleJson);
+      _map.setStyle(styleJsObject);
+    } catch (_) {
+      _map.setStyle(styleString);
+    }
     // catch style loaded for later style changes
     if (_mapReady) {
       _map.once("styledata", _onStyleLoaded);
@@ -685,13 +692,24 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
 
   @override
   Future<void> removeLayer(String layerId) async {
-    _interactiveFeatureLayerIds.remove(layerId);
-    _map.removeLayer(layerId);
+    if (_map.getLayer(layerId) != null) {
+      _interactiveFeatureLayerIds.remove(layerId);
+      _map.removeLayer(layerId);
+    }
   }
 
   @override
   Future<void> setFilter(String layerId, dynamic filter) async {
     _map.setFilter(layerId, filter);
+  }
+
+  @override
+  Future<void> setVisibility(String layerId, bool isVisible) async {
+    final layer = _map.getLayer(layerId);
+    if (layer != null) {
+      _map.setLayoutProperty(
+          layerId, 'visibility', isVisible ? 'visible' : 'none');
+    }
   }
 
   @override
@@ -766,6 +784,24 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
   }
 
   @override
+  Future<void> addFillExtrusionLayer(
+      String sourceId, String layerId, Map<String, dynamic> properties,
+      {String? belowLayerId,
+      String? sourceLayer,
+      double? minzoom,
+      double? maxzoom,
+      dynamic filter,
+      required bool enableInteraction}) async {
+    return _addLayer(sourceId, layerId, properties, "fill-extrusion",
+        belowLayerId: belowLayerId,
+        sourceLayer: sourceLayer,
+        minzoom: minzoom,
+        maxzoom: maxzoom,
+        filter: filter,
+        enableInteraction: enableInteraction);
+  }
+
+  @override
   Future<void> addLineLayer(
       String sourceId, String layerId, Map<String, dynamic> properties,
       {String? belowLayerId,
@@ -817,6 +853,21 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
   }
 
   @override
+  Future<void> addHeatmapLayer(
+      String sourceId, String layerId, Map<String, dynamic> properties,
+      {String? belowLayerId,
+      String? sourceLayer,
+      double? minzoom,
+      double? maxzoom}) async {
+    return _addLayer(sourceId, layerId, properties, "heatmap",
+        belowLayerId: belowLayerId,
+        sourceLayer: sourceLayer,
+        minzoom: minzoom,
+        maxzoom: maxzoom,
+        enableInteraction: false);
+  }
+
+  @override
   Future<void> addRasterLayer(
       String sourceId, String layerId, Map<String, dynamic> properties,
       {String? belowLayerId,
@@ -843,6 +894,8 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
         properties.entries.where((entry) => isLayoutProperty(entry.key)));
     final paint = Map.fromEntries(
         properties.entries.where((entry) => !isLayoutProperty(entry.key)));
+
+    removeLayer(layerId);
 
     _map.addLayer({
       'id': layerId,
@@ -943,6 +996,12 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
     throw UnimplementedError();
   }
 
+  Future<void> updateImageSource(
+      String imageSourceId, Uint8List? bytes, LatLngQuad? coordinates) {
+    // TODO: implement addImageSource
+    throw UnimplementedError();
+  }
+
   @override
   Future<void> addLayer(String imageLayerId, String imageSourceId,
       double? minzoom, double? maxzoom) {
@@ -981,6 +1040,24 @@ class MapboxWebGlPlatform extends MapboxGlPlatform
         source.setData(newData);
       }
     }
+  }
+
+  @override
+  Future<String> takeSnapshot(SnapshotOptions snapshotOptions) async {
+    if (snapshotOptions.styleUri != null || snapshotOptions.styleJson != null) {
+      throw UnsupportedError("style option is not supported");
+    }
+    if (snapshotOptions.bounds != null) {
+      throw UnsupportedError("bounds option is not supported");
+    }
+    if (snapshotOptions.centerCoordinate != null ||
+        snapshotOptions.zoomLevel != null ||
+        snapshotOptions.pitch != 0 ||
+        snapshotOptions.heading != 0) {
+      throw UnsupportedError("camera posision option is not supported");
+    }
+    final base64String = await _map.getCanvas().toDataUrl('image/jpeg');
+    return base64String;
   }
 
   @override
